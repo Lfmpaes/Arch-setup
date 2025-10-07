@@ -38,7 +38,6 @@
 - cursor-bin [AUR]
 
 ## Networking & Sharing
-- wireless_tools
 - localsend-bin [AUR]
 - qbittorrent
 - jdownloader2 [AUR]
@@ -57,7 +56,6 @@
 ## Productivity, Security & Utilities
 - 1password [AUR]
 - discord
-- timeshift
 
 ## Gaming
 - steam
