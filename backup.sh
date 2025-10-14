@@ -18,8 +18,6 @@ declare -A FILE_BACKUPS=(
   ["$HOME/.config/kdeglobals"]="$SCRIPT_DIR/configs/plasma/config/kdeglobals"
   ["$HOME/.config/kscreenlockerrc"]="$SCRIPT_DIR/configs/plasma/config/kscreenlockerrc"
   ["$HOME/.config/kglobalshortcutsrc"]="$SCRIPT_DIR/configs/plasma/config/kglobalshortcutsrc"
-  ["$HOME/Pictures/Wallpapers/small-memory-lp-1920x1200.jpg"]="$SCRIPT_DIR/configs/plasma/wallpapers/small-memory-lp-1920x1200.jpg"
-  ["$HOME/Pictures/Wallpapers/sunrise-landscape-minimalism-5k-ex-1920x1200.jpg"]="$SCRIPT_DIR/configs/plasma/wallpapers/sunrise-landscape-minimalism-5k-ex-1920x1200.jpg"
 )
 
 log() {
@@ -41,5 +39,38 @@ for src in "${!FILE_BACKUPS[@]}"; do
     warn_missing "$src"
   fi
 done
+
+# Capture all wallpapers referenced by Plasma configuration
+PLASMA_APPLETSRC="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+WALLPAPER_DEST_BASE="$SCRIPT_DIR/configs/plasma/wallpapers"
+if [[ -f "$PLASMA_APPLETSRC" ]]; then
+  declare -A COPIED_WALLPAPERS=()
+  while IFS= read -r wallpaper_path; do
+    [[ -z "$wallpaper_path" ]] && continue
+    wallpaper_path="${wallpaper_path#file://}"
+    if [[ "$wallpaper_path" == ~* ]]; then
+      # Expand leading tilde manually
+      wallpaper_path="$HOME${wallpaper_path:1}"
+    fi
+    if [[ ! -f "$wallpaper_path" ]] || [[ -n "${COPIED_WALLPAPERS[$wallpaper_path]:-}" ]]; then
+      [[ -f "$wallpaper_path" ]] || warn_missing "$wallpaper_path"
+      continue
+    fi
+
+    if [[ "$wallpaper_path" == "$HOME/"* ]]; then
+      rel_path="${wallpaper_path#"$HOME/"}"
+    else
+      rel_path="external/$(basename "$wallpaper_path")"
+    fi
+    dest="$WALLPAPER_DEST_BASE/$rel_path"
+    mkdir -p "$(dirname "$dest")"
+    cp -f "$wallpaper_path" "$dest"
+    rel_dest="${dest#$SCRIPT_DIR/}"
+    log "Saved ${rel_dest}"
+    COPIED_WALLPAPERS["$wallpaper_path"]=1
+  done < <(sed -nE 's/^Image(\[[^]]*\])?=//p' "$PLASMA_APPLETSRC" | sort -u)
+else
+  warn_missing "$PLASMA_APPLETSRC"
+fi
 
 log "Backup complete."
