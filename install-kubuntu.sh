@@ -190,6 +190,52 @@ install_nvm() {
   fi
 }
 
+load_nvm() {
+  local candidate
+
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+
+  for candidate in \
+    "$NVM_DIR/nvm.sh" \
+    "/usr/share/nvm/init-nvm.sh" \
+    "/usr/share/nvm/nvm.sh"
+  do
+    if [ -s "$candidate" ]; then
+      # shellcheck source=/dev/null
+      . "$candidate"
+      return 0
+    fi
+  done
+
+  warn "Unable to locate nvm initialization script"
+  return 1
+}
+
+install_javascript_tooling() {
+  if ! load_nvm; then
+    warn "Skipping JavaScript tooling because nvm could not be loaded"
+    return 0
+  fi
+
+  if ! nvm install --lts; then
+    warn "Failed to install Node.js LTS with nvm"
+    return 0
+  fi
+
+  nvm alias default 'lts/*' || true
+  nvm use --lts || true
+
+  if ! curl -fsSL https://bun.com/install | bash; then
+    warn "Failed to install Bun"
+  fi
+
+  export PATH="$HOME/.bun/bin:$PATH"
+
+  if ! npm install -g @openai/codex @anthropic-ai/claude-code; then
+    warn "Failed to install Codex and/or Claude Code"
+  fi
+}
+
 install_jetbrains_nerd_font() {
   if fc-list | grep -qi 'JetBrainsMono Nerd Font Mono'; then
     return 0
@@ -351,6 +397,7 @@ main() {
   install_google_chrome
   install_1password
   install_nvm
+  install_javascript_tooling
 
   log "Ensuring Nerd Font for Powerlevel10k..."
   install_jetbrains_nerd_font
@@ -371,6 +418,7 @@ main() {
 
   log "Done. Reboot recommended."
   log "If this is your first Docker setup, log out and log back in for group changes to apply."
+  log "Remember to log in to your CLI tools after setup: gh, codex, claude."
 }
 
 main "$@"

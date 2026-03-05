@@ -16,6 +16,54 @@ cat <<'BANNER'
                     lfmparch                     
 BANNER
 
+load_nvm() {
+  local candidate
+
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+
+  for candidate in \
+    "$NVM_DIR/nvm.sh" \
+    "/usr/share/nvm/init-nvm.sh" \
+    "/usr/share/nvm/nvm.sh"
+  do
+    if [ -s "$candidate" ]; then
+      # shellcheck source=/dev/null
+      . "$candidate"
+      return 0
+    fi
+  done
+
+  echo "Unable to locate nvm initialization script."
+  return 1
+}
+
+install_javascript_tooling() {
+  echo "Installing Node.js LTS, Bun, Codex, and Claude Code..."
+
+  if ! load_nvm; then
+    echo "Skipping JavaScript tooling because nvm could not be loaded."
+    return
+  fi
+
+  if ! nvm install --lts >/dev/null 2>&1; then
+    echo "Failed to install Node.js LTS with nvm."
+    return
+  fi
+
+  nvm alias default 'lts/*' >/dev/null 2>&1 || true
+  nvm use --lts >/dev/null 2>&1 || true
+
+  if ! curl -fsSL https://bun.com/install | bash >/dev/null 2>&1; then
+    echo "Failed to install Bun."
+  fi
+
+  export PATH="$HOME/.bun/bin:$PATH"
+
+  if ! npm install -g @openai/codex @anthropic-ai/claude-code >/dev/null 2>&1; then
+    echo "Failed to install Codex and/or Claude Code."
+  fi
+}
+
 # Update system packages quietly to ensure latest base
 echo "Updating system packages..."
 sudo pacman -Syu --noconfirm >/dev/null 2>&1
@@ -77,11 +125,14 @@ yay -S --needed --noconfirm nerdfetch >/dev/null 2>&1
 echo "Installing Development & Code Tooling..."
 sudo pacman -S --needed --noconfirm \
   git \
+  curl \
   github-cli \
   go \
   python-pip \
   nvm >/dev/null 2>&1
 yay -S --needed --noconfirm visual-studio-code-bin cursor-bin >/dev/null 2>&1
+
+install_javascript_tooling
 
 # Configure global Git identity
 echo "Configuring Git identity..."
@@ -177,3 +228,6 @@ if command -v plasmashell >/dev/null 2>&1; then
   kquitapp5 plasmashell >/dev/null 2>&1 || true
   (plasmashell --replace >/dev/null 2>&1 & disown)
 fi
+
+echo "Done. Reboot recommended."
+echo "Remember to log in to your CLI tools after setup: gh, codex, claude."

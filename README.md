@@ -5,17 +5,19 @@ This repository contains post-install automation and config backup scripts for A
 ## Scripts
 
 ### `install.sh` (Arch Linux)
-Installs packages and tools on Arch Linux, configures shell/theme files, applies Konsole/Plasma configs, and sets global Git identity.
+Installs packages and tools on Arch Linux, configures shell/theme files, applies Konsole/Plasma configs, sets global Git identity, and provisions the JavaScript CLI toolchain.
 
 What it does:
 - Updates system packages (`pacman -Syu`)
 - Ensures `git` and installs `yay` if missing
 - Installs CLI/dev/media/productivity/gaming/fonts packages from `pacman` and AUR
+- Installs `nvm`, Node.js LTS, Bun, OpenAI Codex, and Claude Code
 - Configures global Git identity:
   - `user.name = Luiz Fernando M. Paes`
   - `user.email = luiz@lfmpaes.com.br`
 - Installs Oh My Zsh + Powerlevel10k and copies `configs/` files into `$HOME`
 - Restarts Plasma shell if available
+- Reminds you to sign in to CLI tools such as `gh`, `codex`, and `claude`
 
 Run:
 
@@ -24,7 +26,7 @@ Run:
 ```
 
 ### `install-kubuntu.sh` (Kubuntu)
-Installs packages/tools on Kubuntu, configures Zsh and Plasma/Konsole files, sets global Git identity, and always logs execution to file.
+Installs packages/tools on Kubuntu, configures Zsh and Plasma/Konsole files, sets global Git identity, provisions the JavaScript CLI toolchain, and always logs execution to file.
 
 Options:
 - `-v`, `--verbose`: stream full command output to terminal while still logging
