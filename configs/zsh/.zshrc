@@ -120,7 +120,11 @@ source ~/powerlevel10k/powerlevel10k.zsh-theme
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
-source /usr/share/nvm/init-nvm.sh
+if [[ -s /usr/share/nvm/init-nvm.sh ]]; then
+  source /usr/share/nvm/init-nvm.sh
+elif [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+  source "$HOME/.nvm/nvm.sh"
+fi
 
 # Added by LM Studio CLI (lms)
 export PATH="$PATH:/home/lfmpaes/.lmstudio/bin"

@@ -1,0 +1,376 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VERBOSE=0
+LOG_FILE=""
+
+print_banner() {
+  printf '\033c' >&3
+  sleep 0.5
+  cat >&3 <<'BANNER'
+.__   _____                __                 __          
+|  |_/ ____\_____   ____ |  | ____ __  _____/  |_ __ __ 
+|  |\   __\\__  \_/ ___\|  |/ /  |  \/    \   __\  |  \
+|  |_|  |   / __ \\  \___|    <|  |  /   |  \  | |  |  /
+|____/__|  (____  /\___  >__|_ \____/|___|  /__| |____/ 
+                \/     \/     \/          \/            
+
+                  lfm-kubuntu-setup
+BANNER
+}
+
+usage() {
+  cat <<'EOF'
+Usage: ./install-kubuntu.sh [options]
+
+Options:
+  -v, --verbose  Print command output live while still logging to file
+  -h, --help     Show this help
+EOF
+}
+
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -v|--verbose)
+        VERBOSE=1
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        printf 'Unknown option: %s\n\n' "$1" >&2
+        usage >&2
+        exit 1
+        ;;
+    esac
+    shift
+  done
+}
+
+setup_logging() {
+  local log_dir timestamp
+
+  log_dir="$SCRIPT_DIR/logs"
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$log_dir"
+  LOG_FILE="$log_dir/install-kubuntu-${timestamp}.log"
+  : >"$LOG_FILE"
+  ln -sfn "$(basename "$LOG_FILE")" "$log_dir/install-kubuntu-latest.log"
+
+  exec 3>&1 4>&2
+  if [ "$VERBOSE" -eq 1 ]; then
+    exec > >(tee -a "$LOG_FILE") 2>&1
+  else
+    exec >>"$LOG_FILE" 2>&1
+  fi
+}
+
+log() {
+  printf '%s\n' "$*"
+  if [ "$VERBOSE" -eq 0 ]; then
+    printf '%s\n' "$*" >&3
+  fi
+}
+
+warn() {
+  printf 'WARNING: %s\n' "$*" >&2
+  if [ "$VERBOSE" -eq 0 ]; then
+    printf 'WARNING: %s\n' "$*" >&4
+  fi
+}
+
+ensure_cmd() {
+  local cmd="$1"
+  local hint="${2:-}"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    warn "Required command not found: $cmd${hint:+ ($hint)}"
+    exit 1
+  fi
+}
+
+install_apt_packages() {
+  local pkg
+  local failed=()
+
+  for pkg in "$@"; do
+    if dpkg -s "$pkg" >/dev/null 2>&1; then
+      continue
+    fi
+
+    if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg"; then
+      failed+=("$pkg")
+    fi
+  done
+
+  if [ "${#failed[@]}" -gt 0 ]; then
+    warn "Failed apt packages: ${failed[*]}"
+  fi
+}
+
+install_snap() {
+  local pkg="$1"
+  shift
+
+  if snap list "$pkg" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! sudo snap install "$pkg" "$@"; then
+    warn "Failed to install snap package: $pkg"
+  fi
+}
+
+install_flatpak() {
+  local app_id="$1"
+
+  if flatpak info "$app_id" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! flatpak install -y flathub "$app_id"; then
+    warn "Failed to install flatpak app: $app_id"
+  fi
+}
+
+install_google_chrome() {
+  if command -v google-chrome >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local tmp_deb
+  tmp_deb="$(mktemp --suffix=.deb)"
+
+  if wget -qO "$tmp_deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"; then
+    sudo dpkg -i "$tmp_deb" || sudo apt-get install -fy
+  else
+    warn "Failed to download Google Chrome .deb"
+  fi
+
+  rm -f "$tmp_deb"
+}
+
+install_1password() {
+  if command -v 1password >/dev/null 2>&1 || command -v op >/dev/null 2>&1; then
+    return 0
+  fi
+
+  sudo install -d -m 0755 /etc/apt/keyrings
+  if curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | \
+    sudo gpg --dearmor -o /etc/apt/keyrings/1password-archive-keyring.gpg; then
+    sudo chmod go+r /etc/apt/keyrings/1password-archive-keyring.gpg
+
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/$(dpkg --print-architecture) stable main" |
+      sudo tee /etc/apt/sources.list.d/1password.list
+
+    sudo mkdir -p /etc/debsig/policies/AC2D62742012EA22/
+    curl -fsSL https://downloads.1password.com/linux/debian/debsig/1password.pol |
+      sudo tee /etc/debsig/policies/AC2D62742012EA22/1password.pol
+
+    sudo mkdir -p /usr/share/debsig/keyrings/AC2D62742012EA22
+    curl -fsSL https://downloads.1password.com/linux/keys/1password.asc |
+      sudo gpg --dearmor -o /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg
+
+    sudo apt-get update -y
+    install_apt_packages 1password
+  else
+    warn "Failed to configure 1Password repository"
+  fi
+}
+
+install_nvm() {
+  if [ -d "$HOME/.nvm" ]; then
+    return 0
+  fi
+
+  if ! curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash; then
+    warn "Failed to install nvm"
+  fi
+}
+
+install_jetbrains_nerd_font() {
+  if fc-list | grep -qi 'JetBrainsMono Nerd Font Mono'; then
+    return 0
+  fi
+
+  local font_dir="$HOME/.local/share/fonts/JetBrainsMonoNerd"
+  local tmp_dir archive
+
+  tmp_dir="$(mktemp -d)"
+  archive="$tmp_dir/JetBrainsMono.zip"
+
+  if ! curl -fsSL -o "$archive" "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"; then
+    warn "Failed to download JetBrainsMono Nerd Font"
+    rm -rf "$tmp_dir"
+    return 0
+  fi
+
+  mkdir -p "$font_dir"
+  if ! unzip -oq "$archive" -d "$font_dir"; then
+    warn "Failed to extract JetBrainsMono Nerd Font"
+    rm -rf "$tmp_dir"
+    return 0
+  fi
+
+  rm -rf "$tmp_dir"
+  fc-cache -f "$font_dir" || warn "Failed to refresh font cache for $font_dir"
+}
+
+configure_zsh() {
+  local oh_my_zsh_dir="$HOME/.oh-my-zsh"
+  local p10k_dir="$HOME/powerlevel10k"
+
+  if [ ! -d "$oh_my_zsh_dir" ]; then
+    git clone https://github.com/ohmyzsh/ohmyzsh.git "$oh_my_zsh_dir" || warn "Failed to clone oh-my-zsh"
+  fi
+
+  if [ ! -d "$p10k_dir" ]; then
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$p10k_dir" || warn "Failed to clone powerlevel10k"
+  fi
+
+  install -Dm644 "$SCRIPT_DIR/configs/zsh/.zshrc" "$HOME/.zshrc"
+  install -Dm644 "$SCRIPT_DIR/configs/zsh/.p10k.zsh" "$HOME/.p10k.zsh"
+}
+
+configure_git_identity() {
+  git config --global user.name "Luiz Fernando M. Paes"
+  git config --global user.email "luiz@lfmpaes.com.br"
+}
+
+copy_tree_to() {
+  local source_base="$1"
+  local target_base="$2"
+  local file rel_path
+
+  [ -d "$source_base" ] || return 0
+
+  while IFS= read -r -d '' file; do
+    rel_path="${file#${source_base}/}"
+    install -Dm644 "$file" "$target_base/$rel_path"
+  done < <(find "$source_base" -type f -print0)
+}
+
+restart_plasma_shell() {
+  if ! command -v plasmashell >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v kquitapp5 >/dev/null 2>&1; then
+    kquitapp5 plasmashell || true
+  else
+    pkill -x plasmashell || true
+  fi
+
+  (nohup plasmashell --replace &)
+}
+
+main() {
+  parse_args "$@"
+  setup_logging
+  print_banner
+  log "Logging to: $LOG_FILE"
+
+  ensure_cmd sudo
+  ensure_cmd apt-get
+  ensure_cmd curl
+  ensure_cmd wget
+  ensure_cmd git
+
+  log "Bootstrapping apt helpers..."
+  sudo apt-get update -y
+  install_apt_packages software-properties-common ca-certificates gnupg apt-transport-https
+
+  log "Enabling Ubuntu repositories (universe/restricted/multiverse)..."
+  sudo add-apt-repository -y universe || true
+  sudo add-apt-repository -y restricted || true
+  sudo add-apt-repository -y multiverse || true
+
+  log "Updating apt metadata..."
+  sudo apt-get update -y
+  sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+
+  log "Installing base tools and services..."
+  install_apt_packages \
+    flatpak \
+    plasma-discover-backend-flatpak \
+    power-profiles-daemon \
+    cron \
+    docker.io \
+    zsh \
+    micro \
+    neovim \
+    vim \
+    eza \
+    yazi \
+    btop \
+    htop \
+    fastfetch \
+    tldr \
+    wget \
+    unrar \
+    unzip \
+    git \
+    gh \
+    golang-go \
+    python3-pip \
+    qbittorrent \
+    gimp \
+    mpv \
+    steam-installer \
+    fonts-noto-cjk \
+    fonts-dejavu \
+    fonts-firacode \
+    fonts-jetbrains-mono \
+    fonts-linuxlibertine \
+    ttf-mscorefonts-installer
+
+  log "Enabling Docker service..."
+  sudo systemctl enable --now docker || warn "Could not enable docker service"
+  sudo usermod -aG docker "$USER" || warn "Could not add $USER to docker group"
+
+  log "Configuring Flatpak (Flathub)..."
+  sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+  log "Installing snap packages..."
+  install_snap code --classic
+  install_snap discord
+
+  # Cursor snap availability can vary by channel/account.
+  install_snap cursor --classic || true
+
+  log "Installing Flatpak applications..."
+  install_flatpak org.localsend.localsend_app
+  install_flatpak org.jdownloader.JDownloader
+  install_flatpak app.zen_browser.zen
+  install_flatpak com.spotify.Client
+  install_flatpak sh.cider.Cider
+
+  log "Installing vendor packages..."
+  install_google_chrome
+  install_1password
+  install_nvm
+
+  log "Ensuring Nerd Font for Powerlevel10k..."
+  install_jetbrains_nerd_font
+
+  log "Configuring Zsh and shell prompt..."
+  configure_zsh
+
+  log "Configuring Git identity..."
+  configure_git_identity
+
+  log "Applying Konsole and Plasma configs from repository..."
+  copy_tree_to "$SCRIPT_DIR/configs/konsole/config" "$HOME/.config"
+  copy_tree_to "$SCRIPT_DIR/configs/konsole/profiles" "$HOME/.local/share/konsole"
+  copy_tree_to "$SCRIPT_DIR/configs/plasma/config" "$HOME/.config"
+  copy_tree_to "$SCRIPT_DIR/configs/plasma/wallpapers" "$HOME/Pictures/Wallpapers"
+
+  restart_plasma_shell
+
+  log "Done. Reboot recommended."
+  log "If this is your first Docker setup, log out and log back in for group changes to apply."
+}
+
+main "$@"

@@ -83,6 +83,11 @@ sudo pacman -S --needed --noconfirm \
   nvm >/dev/null 2>&1
 yay -S --needed --noconfirm visual-studio-code-bin cursor-bin >/dev/null 2>&1
 
+# Configure global Git identity
+echo "Configuring Git identity..."
+git config --global user.name "Luiz Fernando M. Paes"
+git config --global user.email "luiz@lfmpaes.com.br"
+
 # Install Networking & Sharing
 echo "Installing Networking & Sharing..."
 sudo pacman -S --needed --noconfirm qbittorrent >/dev/null 2>&1
